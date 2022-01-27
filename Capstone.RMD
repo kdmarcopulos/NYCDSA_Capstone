@@ -1,0 +1,768 @@
+# Capstone Project - Building a Player Evaluation System
+
+# Part 1 - Problem
+
+Transfer valuations are opinion based on how each team perceives a player in question. With the rise of government backed football owners leading to inflated prices in the market, it is more important that ever to ensure money is spent wisely. 
+
+In order to combat this, we will look at what KPIs have impacts on teams point totals throughout the season. Once we find correlations, we will use these as weights which can be applied to individual player metrics. The summation of the player evaluations will give us a point total that evaluates how players should be evaluated regarding transfers.
+
+In order to get an edge in the market, we can compare the summation of points from our model to the relative market value of a player, using data from Wyscout/Transfermarkt. Based on our KPIs, we can see which players are over/undervalued in our current enviornment.
+
+# Import Library
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(pacman)
+library(ggplot2)
+library(tibble)
+library(tidyverse)
+library(rvest)
+library(janitor)
+library(prismatic)
+library(ggrepel)
+```
+
+
+
+
+# Import Team Data
+
+```{r}
+euro5_18_21 = read.csv("C:/Users/texas/Documents/NYC Data Science Academy/Capstone/Euro5_Data_Capstone.csv")
+head(euro5_18_21)
+```
+
+```{r}
+str(euro5_18_21)
+```
+
+```{r}
+summary(euro5_18_21)
+```
+
+# Filter out French League Data from 2019/20 season due to stoppage in season due to COVID
+
+```{r}
+euro5_18_21 = euro5_18_21[euro5_18_21$League != "Ligue 1" | euro5_18_21$Season != '2019/20', ]
+euro5_18_21
+
+# 20 Ligue 1 teams data removed from 2019/20
+```
+
+# 274 Rows from 294, confirms the 20 French teams from the 2019/20 season were removed.
+
+# Identify Correlation Between Points & Other numerical variables
+
+
+```{r}
+corr_coef = cor(euro5_18_21[ , 4:71])
+corr_coef[ ,1]
+# Slicing the correlation coefficients to display correlations to Points
+```
+
+# Creating a table that pairs features with the correlation of each feature to points.
+
+```{r}
+points_corr = tibble(Feature = colnames(euro5_18_21[, 4:71]), Correlation_to_Points = corr_coef[ ,1])
+points_corr
+```
+
+# Import Outfield Player Data
+
+```{r}
+
+#import forwards
+df_1 = read.csv("Euro5_Zone11.csv")
+
+#import cams
+df_2 = read.csv("Euro5_Zone8.csv")
+
+#import cms/cdms
+df_3 = read.csv("Euro5_Zone5.csv")
+
+#import cbs
+df_4 = read.csv("Euro5_Zone2.csv")
+
+#import fb/wbs
+df_5 = read.csv("Euro5_Zones_3_4.csv")
+
+#import wingers/wide mids
+df_6 = read.csv("Euro5_Zones_6_7_9_10.csv")
+```
+
+
+```{r}
+#merge 6 outfield player data sets into 1
+
+euro5_players = rbind(df_1, df_2, df_3, df_4, df_5, df_6)
+str(euro5_players)
+```
+
+```{r}
+# checking for duplicated players
+euro5_players[duplicated(euro5_players$Player), ]
+```
+
+#Confirming all duplicated players are different
+
+```{r}
+euro5_players[euro5_players$Player == "João Pedro", ]
+euro5_players[euro5_players$Player == "N. Maksimovi?", ]
+euro5_players[euro5_players$Player == "M. López", ]
+euro5_players[euro5_players$Player == "B. Mendy", ]
+euro5_players[euro5_players$Player == "L. Pellegrini", ]
+euro5_players[euro5_players$Player == "H. Traoré", ]
+
+```
+
+
+```{r}
+euro5_players[euro5_players$Player == "Marcelo", ]
+euro5_players[euro5_players$Player == "B. Traoré", ]
+euro5_players[euro5_players$Player == "G. Pezzella", ]
+euro5_players[euro5_players$Player == "Rodri", ]
+euro5_players[euro5_players$Player == "A. Touré", ]
+euro5_players[euro5_players$Player == "E. Dieye", ]
+
+```
+
+
+# Filtering by Players Currently Playing at Top Flight Clubs
+
+```{r}
+
+# Creating groups of clubs by league for the 2021/22 season
+
+LaLiga_Clubs = c("Athletic Bilbao", "Atlético Madrid", "Barcelona", "Cádiz", 
+                 "Celta de Vigo", "Deportivo Alavés", "Elche", "Espanyol", "Getafe", 
+                 "Granada", "Levante", "Mallorca", "Osasuna", "Rayo Vallecano",
+                 "Real Betis", "Real Madrid", "Real Sociedad", "Sevilla", "Valencia", "Villarreal")
+
+Prem_Clubs = c("Arsenal", "Aston Villa", "Brentford", "Brighton", "Burnley", 
+               "Chelsea", "Crystal Palace", "Everton", "Leeds United", "Leicester City", 
+               "Liverpool", "Manchester City", "Manchester United", "Newcastle United", "Norwich City", 
+               "Southampton", "Tottenham Hotspur", "Watford", "West Ham United", "Wolverhampton Wanderers")
+
+SerieA_Clubs = c("Atalanta", "Bologna", "Cagliari", "Empoli", "Fiorentina", 
+                 "Genoa", "Hellas Verona", "Internazionale", "Juventus", "Lazio", 
+                 "Milan", "Napoli", "Roma", "Salernitana", "Sampdoria", 
+                 "Sassuolo", "Spezia", "Torino", "Udinese", "Venezia")
+
+Ligue1_Clubs = c("Angers SCO", "Bordeaux", "Brest", "Clermont", "Lens", 
+                 "Lille", "Lorient", "Metz", "Monaco", "Montpellier", 
+                 "Nantes", "Nice", "Olympique Lyonnais", "Olympique Marseille", "PSG", 
+                 "Reims", "Rennes", "Saint-Étienne", "Strasbourg", "Troyes")
+
+Bundesliga_Clubs = c("Arminia Bielefeld", "Augsburg", "Bayer Leverkusen", "Bayern München", "Bochum", 
+                     "Borussia Dortmund", "Borussia M'gladbach", "Eintracht Frankfurt", "Freiburg", "Greuther Fürth", 
+                     "Hertha BSC", "Hoffenheim", "Köln", "Mainz 05", "RB Leipzig", 
+                     "Stuttgart", "Union Berlin", "Wolfsburg")
+
+Euro_Clubs = c(LaLiga_Clubs, Prem_Clubs, SerieA_Clubs, Ligue1_Clubs, Bundesliga_Clubs)
+```
+
+```{r}
+#filter to just show players currently on the squad
+#confirming there are 98 unique teams
+
+euro5_players = euro5_players %>% filter(Team %in% Euro_Clubs)
+length(unique(euro5_players$Team))
+euro5_players
+```
+
+# Adding columns
+
+```{r}
+euro5_players
+```
+
+```{r}
+Leagues = case_when(euro5_players$Team %in% LaLiga_Clubs ~ "La Liga",
+                    euro5_players$Team %in% Prem_Clubs ~ "Premier League",
+                    euro5_players$Team %in% SerieA_Clubs ~ "Serie A",
+                    euro5_players$Team %in% Ligue1_Clubs ~ "Ligue 1",
+                    euro5_players$Team %in% Bundesliga_Clubs ~ "Bundesliga")
+```
+
+
+
+```{r}
+# adding league column
+euro5_players = add_column(euro5_players, Leagues, .after = 2)
+head(euro5_players)
+```
+
+# adding Main Position column by putting each player in their most common position
+
+```{r}
+euro5_players = euro5_players %>% 
+  mutate(Main_Position = gsub(",.*$", "", euro5_players$Position))
+```
+
+```{r}
+euro5_players = euro5_players %>% 
+  relocate(Main_Position, .before = Age)
+head(euro5_players)
+```
+
+# Position Peaks by Age - Creating positional brackets for peaks
+
+https://www.youtube.com/watch?v=ZFUX1qXj6J8
+
+Using peak age values recorded by The Athletic for each position.
+
+
+```{r}
+unique(euro5_players$Main_Position)
+```
+
+
+```{r}
+Center_Forwards = c("CF")
+
+Cen_Attk_Mids = c("AMF")
+
+Center_Mids = c("RCMF", "RDMF", "LCMF", "LDMF", "DMF")
+
+Center_Backs = c("RCB", "LCB", "CB")
+
+Outside_Backs = c("RB", "LB", "RWB", "LWB")
+
+Wide_Attackers = c("LWF", "RWF", "LAMF", "LW", "RW", "RAMF")
+
+Total_Positions = c(Center_Forwards, Cen_Attk_Mids, Center_Mids, 
+                    Center_Backs, Outside_Backs, Wide_Attackers)
+```
+
+```{r}
+#Using case_when to group players by developing, peak, and veteran status by age and position
+
+Position_Peaks = case_when(
+  euro5_players$Main_Position %in% Center_Forwards & between(euro5_players$Age, 0, 25) ~ "Developing",
+  euro5_players$Main_Position %in% Center_Forwards & between(euro5_players$Age, 26, 28) ~ "Peak",
+  euro5_players$Main_Position %in% Center_Forwards & between(euro5_players$Age, 29, 100) ~ "Veteran",
+          
+  euro5_players$Main_Position %in% Cen_Attk_Mids & between(euro5_players$Age, 0, 24) ~ "Developing",
+  euro5_players$Main_Position %in% Cen_Attk_Mids & between(euro5_players$Age, 25, 27) ~ "Peak",
+  euro5_players$Main_Position %in% Cen_Attk_Mids & between(euro5_players$Age, 28, 100) ~ "Veteran",
+          
+  euro5_players$Main_Position %in% Center_Mids & between(euro5_players$Age, 0, 23) ~ "Developing", 
+  euro5_players$Main_Position %in% Center_Mids & between(euro5_players$Age, 24, 26) ~ "Peak", 
+  euro5_players$Main_Position %in% Center_Mids & between(euro5_players$Age, 27, 100) ~ "Veteran", 
+          
+  euro5_players$Main_Position %in% Center_Backs & between(euro5_players$Age, 0, 25) ~ "Developing",
+  euro5_players$Main_Position %in% Center_Backs & between(euro5_players$Age, 26, 28) ~ "Peak",
+  euro5_players$Main_Position %in% Center_Backs & between(euro5_players$Age, 29, 100) ~ "Veteran",
+          
+  euro5_players$Main_Position %in% Outside_Backs & between(euro5_players$Age, 0, 23) ~ "Developing",
+  euro5_players$Main_Position %in% Outside_Backs & between(euro5_players$Age, 24, 26) ~ "Peak",
+  euro5_players$Main_Position %in% Outside_Backs & between(euro5_players$Age, 27, 100) ~ "Veteran",
+          
+  euro5_players$Main_Position %in% Wide_Attackers & between(euro5_players$Age, 0, 24) ~ "Developing",
+  euro5_players$Main_Position %in% Wide_Attackers & between(euro5_players$Age, 25, 27) ~ "Peak",
+  euro5_players$Main_Position %in% Wide_Attackers & between(euro5_players$Age, 28, 100) ~ "Veteran")
+          
+```
+
+```{r}
+euro5_players = euro5_players %>% 
+  mutate(Position_Peaks = Position_Peaks) %>% 
+  relocate(Position_Peaks, .before = Market.value)
+head(euro5_players)
+```
+
+```{r}
+Position_Brackets = case_when(
+  euro5_players$Main_Position %in% Center_Forwards ~ "Center Forward",
+          
+  euro5_players$Main_Position %in% Cen_Attk_Mids ~ "CAM",
+          
+  euro5_players$Main_Position %in% Center_Mids ~ "Center Mid", 
+          
+  euro5_players$Main_Position %in% Center_Backs ~ "Center Back",
+          
+  euro5_players$Main_Position %in% Outside_Backs  ~ "Outside Back",
+          
+  euro5_players$Main_Position %in% Wide_Attackers~ "Wide Attacker")
+          
+```
+
+```{r}
+euro5_players = 
+  euro5_players %>% 
+  mutate(Position_Brackets = Position_Brackets) %>% 
+  relocate(Position_Brackets, .after = Main_Position) %>%
+  relocate(Foot, .before = Matches.played)
+
+head(euro5_players)
+```
+
+
+# Finding Percentiles
+
+
+```{r}
+euro5_percentile = 
+  euro5_players %>% 
+  group_by(Position_Brackets) %>% 
+  mutate(across(Goals:Penalty.conversion..., ~ ntile(., 100)))
+```
+
+```{r}
+head(euro5_percentile)
+```
+
+```{r}
+euro5_percentile %>% filter(., Position_Brackets == "CAM")
+```
+
+
+
+
+# Creating variables to be multiplied
+
+```{r}
+points_corr
+```
+
+
+```{r}
+# Goals and Goals Conceded
+Goals_corr =	0.87610235			
+xG_corr =	0.79769778			
+xG.per.shot_corr =	0.45606776			
+Goals.conceded_corr =	-0.82144875			
+xGA_corr =	-0.67844482			
+xG.per.shot.against_corr =	-0.25507918			
+Age_corr =	-0.02951557			
+Ball.possession_corr =	0.71398578			
+Substitutions_corr =	0.03326172	
+```
+
+```{r}
+# Shooting, Corssing, and Dribbling Corr
+Shots.Total_corr =	0.70648234			
+Shots.Per.90.mins_corr =	0.67922716			
+Shot...On.Target_corr =	0.54325657			
+Crosses.Total_corr =	0.29535027			
+Crosses.Per.90.Mins_corr =	0.28537549			
+Cross...Accurate_corr =	0.01951749			
+Crosses.To.Six.Yard.Box_corr =	0.38461081			
+Dribbles.Total_corr =	0.39168022			
+Dribbles.Per.90.Mins_corr =	0.37910388			
+Dribbles...Success_corr =	0.22998463	
+```
+
+```{r}
+# Touches, Shots Against, Blocked Shots, Defensive Duels Corr
+Touches.in.Pen.Area.Total_corr =	0.78513539			
+Touches.in.Pen.Area.Per.90.Mins_corr =	0.76499061			
+Shots.against_corr =	-0.57224554			
+Shots.Aginst.Per.90.mins_corr =	-0.60788619			
+Blocked.ShotsTotal_corr =	-0.36856700			
+Blocked.Shots.Per.90.mins_corr =	-0.40549214			
+Percentage.of.blocked.shots_corr =	-0.13259641			
+Percentage.of.blocked.shots.against_corr =	0.17874915			
+Defensive.Duels.Total_corr =	-0.31433546			
+Defensive.Duels.Per.90.mins_corr =	-0.41103748	
+```
+
+```{r}
+# Defensive Duels Success, Interceptions, Aerial Duels, Ball Loss, Challenge Intensity, PPDA Corr
+Defensive.Duels...success_corr =	0.15952161			
+Interceptions.Total_corr =	-0.51572898			
+Interceptions.Per.90.mins_corr =	-0.56485940			
+Aerial.Duels.Total_corr =	-0.42482672			
+Aerial.Duels.Per.90.mins_corr =	-0.45980832			
+Aerial.Duels...success_corr =	0.40316471			
+Ball.Losses.Total_corr =	-0.29423824			
+Ball.Losses.Per.90.mins_corr =	-0.33896777			
+Challenge.intensity_corr =	0.29909015			
+PPDA_corr =	-0.39770775	
+```
+
+```{r}
+# Fouls, Passes, Through Passes, Key Passes Corr
+Fouls.Total_corr =	-0.23487641			
+Fouls.Per.90.mins_corr =	-0.28989614			
+Passes.Total_corr =	0.74884769			
+Passes.Per.90.mins_corr =	0.72497245			
+Passes...accurate_corr =	0.60217600			
+Through.Passes.Total_corr =	0.69743064			
+Through.Passes.Per.90.mins_corr =	0.67815389			
+Through.Passes...accurate_corr =	0.34188419			
+Key.Passes.Total_corr =	0.78995496			
+Key.Passes.Per.90.mins_corr =	0.75009657	
+```
+
+```{r}
+# Long Passes Corr, Passes to Final Third, Passing Rate, Smart Passes Corr
+Long.Passes.Total_corr =	-0.25283723			
+Long.Passes.Per.90.mins_corr =	-0.29173967			
+Long.Passes...accurate_corr =	0.31504773			
+Passes.to.Final.Thrid.Total_corr =	0.72780575			
+Passes.to.Final.Thrid.Per.90.mins_corr =	0.71024000			
+Passes.to.Final.Thrid...accurate_corr =	0.69655884			
+Passing.rate_corr =	0.66540178			
+Smart.Passes.Total_corr =	0.71541250			
+Smart.Passes.Per.90.mins_corr =	0.69783654			
+Smart.Passes...accuracy_corr =	0.22341613		
+```
+
+```{r}
+# Progressive Passes, Progressive Runs, Deep Completions, PPDA Against Corr
+Progressive.Passes.Total_corr =	0.64957004			
+Progressive.Passes.Per.90.mins_corr =	0.56142324			
+Progressive.Passes...accuracy_corr =	0.68001944			
+Progressive.Runs.Total_corr =	0.61909373			
+Progressive.Runs.Per.90.mins_corr =	0.61565485			
+Deep.Completions.Total_corr =	0.77412761			
+Deep.Completions.Per.90.mins_corr =	0.76082506			
+PPDA.Against_corr =	0.68152616	
+```
+
+# Assigning correlations to percentiles to generate a weighted value
+# Fomula - Percentile * ((Correlation +/- 1) * 2)
+# Since there is no total assist metric, we will use the correlation for goals because a goal leads to the same outcome as an assist.
+
+```{r}
+euro5_player_weights = 
+  euro5_percentile %>% 
+                            transmute(
+                            
+                            Player = Player, 
+                            
+                            Team = Team, 
+                            
+                            Leagues = Leagues,
+                            
+                            Position = Position,
+                            
+                            Main_Position = Main_Position,
+                            
+                            Position_Brackets = Position_Brackets,
+                            
+                            Age = Age,
+                            
+                            Position_Peaks = Position_Peaks,
+                            
+                            Market.value = Market.value,
+                            
+                            Contract.expires = Contract.expires,
+                            
+                            Foot = Foot,
+                            
+                            Matches.played = Matches.played,
+                            
+                            Minutes.played = Minutes.played,
+                            
+                            Height = Height,
+                            
+                            Weight = Weight,
+                            
+                            Goals = Goals * ((1 + Goals_corr) * 2) / 100, 
+                            
+                            xG = xG * ((1 + xG_corr) * 2) / 100, 
+                            
+                            Assists = Assists * ((1 + Goals_corr) * 2) / 100, 
+                            
+                            xA = xA * ((1 + xG_corr) * 2) / 100, 
+                            
+                            Defensive.duels.per.90 = Defensive.duels.per.90 * 
+                              ((1 + abs(Defensive.Duels.Per.90.mins_corr)) * 2) / 100, 
+                            
+                            Defensive.duels.won... = Defensive.duels.won... * 
+                              ((1 + Defensive.Duels...success_corr) * 2) / 100, 
+                            
+                            Aerial.duels.per.90 = Aerial.duels.per.90 
+                            * ((1 + abs(Aerial.Duels.Per.90.mins_corr)) * 2) / 100,
+                            
+                            Aerial.duels.won... = Aerial.duels.won... 
+                            * ((1 + Aerial.Duels...success_corr) * 2) / 100,
+                            
+                            #Sliding.tackles.per.90 = Sliding.tackles.per.90 * ((1 + xG_corr) * 2) / 100,
+
+                            #PAdj.Sliding.tackles = PAdj.Sliding.tackles * ((1 + xG_corr) * 2) / 100,
+                            
+                            #Shots.blocked.per.90 = Shots.blocked.per.90 * ((1 + xG_corr) * 2) / 100,
+                            
+                            Interceptions.per.90 = Interceptions.per.90 * 
+                              ((1 + abs(Interceptions.Per.90.mins_corr)) * 2) / 100,
+                            
+                            PAdj.Interceptions = PAdj.Interceptions * 
+                              ((1 + abs(Interceptions.Per.90.mins_corr)) * 2) / 100,
+                            
+                            Fouls.per.90 = Fouls.per.90 * ((Fouls.Per.90.mins_corr - 1) * 2) / 100,
+                            
+                            Goals.per.90 = Goals.per.90 * ((1 + Goals_corr) * 2) / 100,
+                            
+                            Non.penalty.goals = Non.penalty.goals * ((1 + Goals_corr) * 2) / 100,
+                            
+                            Non.penalty.goals.per.90 = Non.penalty.goals.per.90 * ((1 + Goals_corr) * 2) / 100,
+                            
+                            xG.per.90 = xG.per.90 * ((1 + xG_corr) * 2) / 100,
+                            
+                            Shots = Shots * ((1 + Shots.Total_corr) * 2) / 100,
+                            
+                            Shots.per.90 = Shots.per.90 * ((1 + Shots.Per.90.mins_corr) * 2) / 100,
+                            
+                            Shots.on.target... = Shots.on.target... * ((1 + Shot...On.Target_corr) * 2) / 100,
+                            
+                            Goal.conversion... = Goal.conversion... * ((1 + Goals_corr) * 2) / 100,
+                            
+                            Assists.per.90 = Assists.per.90 * ((1 + Goals_corr) * 2) / 100,
+                            
+                            Crosses.per.90 = Crosses.per.90 * ((1 + Crosses.Per.90.Mins_corr) * 2) / 100,
+                            
+                            Accurate.crosses... = Accurate.crosses... * ((1 + Cross...Accurate_corr) * 2) / 100,
+                            
+                            Crosses.to.goalie.box.per.90 = Crosses.to.goalie.box.per.90 * 
+                              ((1 + Crosses.To.Six.Yard.Box_corr) * 2) / 100,
+                            
+                            Dribbles.per.90 = Dribbles.per.90 * ((1 + Dribbles.Per.90.Mins_corr) * 2) / 100,
+                            
+                            Successful.dribbles... = Successful.dribbles... * 
+                              ((1 + Dribbles...Success_corr) * 2) / 100,
+                            
+                            #Offensive.duels.per.90 = Offensive.duels.per.90 * ((1 + xG_corr) * 2) / 100,
+                            
+                            #Offensive.duels.won... = Offensive.duels.won... * ((1 + xG_corr) * 2) / 100,
+                            
+                            Touches.in.box.per.90 = Touches.in.box.per.90 * 
+                              ((1 + Touches.in.Pen.Area.Per.90.Mins_corr) * 2) / 100,
+                            
+                            Progressive.runs.per.90 = Progressive.runs.per.90 * 
+                              ((1 + Progressive.Runs.Per.90.mins_corr) * 2) / 100,
+                            
+                            Accelerations.per.90 = Accelerations.per.90 * 
+                              ((1 + Progressive.Runs.Per.90.mins_corr) * 2) / 100,
+                            
+                            #Received.passes.per.90 = Received.passes.per.90 * ((1 + xG_corr) * 2) / 100,
+                            
+                            #Received.long.passes.per.90 = Received.long.passes.per.90 * 
+                            #((1 + xG_corr) * 2) / 100,
+                            
+                            Passes.per.90 = Passes.per.90 * ((1 + Passes.Per.90.mins_corr) * 2) / 100,
+                            
+                            Accurate.passes... = Accurate.passes... * ((1 + Passes...accurate_corr) * 2) / 100,
+                            
+                            Forward.passes.per.90 = Forward.passes.per.90 *
+                              ((1 + Passes.Per.90.mins_corr) * 2) / 100,
+                            
+                            Accurate.forward.passes... = Accurate.forward.passes... * 
+                              ((1 + Passes...accurate_corr) * 2) / 100,
+                            
+                            Back.passes.per.90 = Back.passes.per.90 * 
+                              ((1 + Passes.Per.90.mins_corr) * 2) / 100,
+                            
+                            Accurate.back.passes... = Accurate.back.passes... * 
+                              ((1 + Passes...accurate_corr) * 2) / 100,
+                            
+                            Lateral.passes.per.90 = Lateral.passes.per.90 
+                            * ((1 + Passes.Per.90.mins_corr) * 2) / 100,
+                            
+                            Accurate.lateral.passes... = Accurate.lateral.passes... * 
+                              ((1 + Passes...accurate_corr) * 2) / 100,
+                            
+                            Short...medium.passes.per.90 = Short...medium.passes.per.90 * 
+                              ((1 + Passes.Per.90.mins_corr) * 2) / 100,
+                            
+                            Accurate.short...medium.passes... = Accurate.short...medium.passes... * 
+                              ((1 + Passes...accurate_corr) * 2) / 100,
+                            
+                            #Long.passes.per.90 = Long.passes.per.90  * 
+                              #((1 + Long.Passes.Per.90.mins_corr) * 2) / 100,
+                            
+                            Accurate.long.passes... = Accurate.long.passes... * 
+                              ((1 + Long.Passes...accurate_corr) * 2) / 100,
+                            
+                            #Average.pass.length..m = Average.pass.length..m * ((1 + xG_corr) * 2) / 100,
+                            
+                            #Average.long.pass.length..m = Average.long.pass.length..m * 
+                            #((1 + xG_corr) * 2) / 100,
+                            
+                            xA.per.90 = xA.per.90 * ((1 + xG_corr) * 2) / 100,
+                            
+                            #Second.assists.per.90 = Second.assists.per.90 * ((1 + xG_corr) * 2) / 100,
+                            
+                            #Third.assists.per.90 = Third.assists.per.90 * ((1 + xG_corr) * 2) / 100,
+                            
+                            Smart.passes.per.90 = Smart.passes.per.90 * 
+                              ((1 + Smart.Passes.Per.90.mins_corr) * 2) / 100,
+                            
+                            Accurate.smart.passes... = Accurate.smart.passes... * 
+                              ((1 + Smart.Passes...accuracy_corr) * 2) / 100,
+                            
+                            Key.passes.per.90 = Key.passes.per.90 * ((1 + Key.Passes.Per.90.mins_corr) * 2) / 100,
+                            
+                            Passes.to.final.third.per.90 = Passes.to.final.third.per.90 * 
+                              ((1 + Passes.to.Final.Thrid.Per.90.mins_corr) * 2) / 100,
+                            
+                            Accurate.passes.to.final.third... = Accurate.passes.to.final.third... * 
+                              ((1 + Passes.to.Final.Thrid...accurate_corr) * 2) / 100,
+                            
+                            #Passes.to.penalty.area.per.90 = Passes.to.penalty.area.per.90 * 
+                              #((1 + xG_corr) * 2) / 100,
+                            
+                            #Accurate.passes.to.penalty.area... = Accurate.passes.to.penalty.area... * 
+                              #((1 + xG_corr) * 2) / 100,
+                            
+                            Through.passes.per.90 = Through.passes.per.90 * 
+                              ((1 + Through.Passes.Per.90.mins_corr) * 2) / 100,
+                            
+                            Accurate.through.passes... = Accurate.through.passes... * 
+                              ((1 + Through.Passes...accurate_corr) * 2) / 100,
+                            
+                            Deep.completions.per.90 = Deep.completions.per.90 * 
+                              ((1 + Deep.Completions.Per.90.mins_corr) * 2) / 100,
+                            
+                            Deep.completed.crosses.per.90 = Deep.completed.crosses.per.90 * 
+                              ((1 + Cross...Accurate_corr) * 2) / 100,
+                            
+                            Progressive.passes.per.90 = Progressive.passes.per.90 * 
+                              ((1 + Progressive.Passes.Per.90.mins_corr) * 2) / 100,
+                            
+                            Accurate.progressive.passes... = Accurate.progressive.passes... * 
+                              ((1 + Progressive.Passes...accuracy_corr) * 2) / 100
+                            
+                            #Penalties.taken = Penalties.taken * ((1 + xG_corr) * 2) / 100,
+                            
+                            #Penalty.conversion... = Penalty.conversion... * ((1 + xG_corr) * 2) / 100,
+                            )
+```
+
+
+```{r}
+euro5_player_weights
+```
+
+# Web scraping to get league coefficients
+
+```{r}
+# link to wiki with uefa coefficients
+url_uefa = "https://en.wikipedia.org/wiki/UEFA_coefficient"
+```
+
+```{r}
+full_table = read_html(url_uefa)
+```
+
+```{r}
+allTables = full_table %>% html_table(fill = TRUE)
+```
+
+
+```{r}
+# scrape the table with the coefficients
+
+table_1 = allTables[[11]]
+table_1
+```
+
+```{r}
+#make column names unique so we can clean everything
+colnames(table_1) = make.unique(colnames(table_1))
+table_1
+```
+
+```{r}
+#selecting columns relevant to us
+
+table_1 = table_1 %>% 
+  select(Ranking, `Member association(L: League, C: Cup, LC: League cup[a])`, Coefficient.5)
+head(table_1)
+```
+
+```{r}
+# removing the first row of data
+table_1 = table_1[-1, ]
+head(table_1)
+```
+
+```{r}
+#renaming column names
+
+colnames(table_1) = c("Ranking", "Country", "Total Coefficient")
+```
+
+
+```{r}
+table_1 = table_1 %>% 
+  mutate(Country = gsub(" \\(.*", "", Country))
+```
+
+```{r}
+table_1
+```
+
+# Assigning values to each country
+
+```{r}
+eng_coef = 99.783
+spain_coef = 89.855
+italy_coef = 72.902
+germ_coef = 70.784
+france_coef = 56.081
+```
+
+
+# Adding League Coef Wt and Player Peak Age Wt
+
+```{r}
+League_Coef_Wt = 
+  case_when(euro5_player_weights$Leagues == "Premier League" ~ eng_coef * 0.25, 
+            euro5_player_weights$Leagues == "La Liga" ~ spain_coef * 0.25,
+            euro5_player_weights$Leagues == "Serie A" ~ italy_coef * 0.25,
+            euro5_player_weights$Leagues == "Bundesliga" ~ germ_coef * 0.25,
+            euro5_player_weights$Leagues == "Ligue 1" ~ france_coef * 0.25)
+```
+
+```{r}
+Position_Peak_Wt = 
+  case_when(euro5_player_weights$Position_Peaks == "Developing" ~ 2.0,
+            euro5_player_weights$Position_Peaks == "Peak" ~ 1.75,
+            euro5_player_weights$Position_Peaks == "Veteran" ~ 1.0)
+```
+
+```{r}
+
+# add new columns to data frame
+
+euro5_player_weights = euro5_player_weights %>% 
+  add_column(., League_Coef_Wt, Position_Peak_Wt)
+```
+
+```{r}
+head(euro5_player_weights)
+```
+
+# Linear Regression
+
+```{r}
+test_1 = euro5_player_weights %>% 
+  select(1:15, 20:26, 45, 47, 49, 51, 53, 54, 63:68) %>% 
+  filter(Position_Brackets == "Center Back")
+```
+
+
+```{r}
+#test_1 %>% mutate(Weighted_Score = apply(., FUN = sum, MARGIN = 1, na.rm = TRUE))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

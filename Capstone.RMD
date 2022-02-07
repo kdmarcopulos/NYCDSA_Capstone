@@ -2,13 +2,14 @@
 
 # Part 1 - Problem
 
-Transfer valuations are opinion based on how each team perceives a player in question. With the rise of government backed football owners leading to inflated prices in the market, it is more important that ever to ensure money is spent wisely. 
+Transfer valuations are opinion based on how each team perceives a player in question. With the rise of wealthy owners and lucrative TV deals boosting revenues, it is more important that ever to ensure money is spent wisely. 
 
-In order to combat this, we will look at what KPIs have impacts on teams point totals throughout the season. Once we find correlations, we will use these as weights which can be applied to individual player metrics. The summation of the player evaluations will give us a point total that evaluates how players should be evaluated regarding transfers.
+In order to combat this, we will look at what KPIs have impacts on teams point totals throughout the season. Once we find correlations, we will use these as weights which can be applied to individual player metrics. Using a mathematical formula, we will create weighted values for each player based on their current season performance and identify if their performance deems that overvalued, undervalued, or within reason of their market value.
 
-In order to get an edge in the market, we can compare the summation of points from our model to the relative market value of a player, using data from Wyscout/Transfermarkt. Based on our KPIs, we can see which players are over/undervalued in our current enviornment.
+Both team and player data will be sourced from Wyscout. Team data will be pulled from the 2018/19 season through the end of the 2020/21 season, while player data will referencing league data throughout the 2021/22 season.
 
 # Import Library
+
 
 ```{r}
 library(ggplot2)
@@ -21,12 +22,14 @@ library(rvest)
 library(janitor)
 library(prismatic)
 library(ggrepel)
+library(mosaic)
+library(caTools)
 ```
 
 
 
 
-# Import Team Data
+# Import Team Data - Top 5 Euro Leagues from the 2018/19 through the end of the 2020/21 season.
 
 ```{r}
 euro5_18_21 = read.csv("C:/Users/texas/Documents/NYC Data Science Academy/Capstone/Euro5_Data_Capstone.csv")
@@ -35,6 +38,7 @@ head(euro5_18_21)
 
 ```{r}
 str(euro5_18_21)
+#294 observations and 71 variables
 ```
 
 ```{r}
@@ -42,12 +46,14 @@ summary(euro5_18_21)
 ```
 
 # Filter out French League Data from 2019/20 season due to stoppage in season due to COVID
+# Ligue 1 did not resume in 2019/20, so we do not want this to skew the data
 
 ```{r}
 euro5_18_21 = euro5_18_21[euro5_18_21$League != "Ligue 1" | euro5_18_21$Season != '2019/20', ]
 euro5_18_21
 
 # 20 Ligue 1 teams data removed from 2019/20
+# Rows dropped from 294 to 274, omitting the 20 Ligue 1 Teams in 2019/20
 ```
 
 # 274 Rows from 294, confirms the 20 French teams from the 2019/20 season were removed.
@@ -65,8 +71,9 @@ corr_coef[ ,1]
 
 ```{r}
 points_corr = tibble(Feature = colnames(euro5_18_21[, 4:71]), Correlation_to_Points = corr_coef[ ,1])
-points_corr
+points_corr[order(points_corr$Correlation_to_Points, decreasing = TRUE), ]
 ```
+
 
 # Import Outfield Player Data
 
@@ -97,6 +104,7 @@ df_6 = read.csv("Euro5_Zones_6_7_9_10.csv")
 
 euro5_players = rbind(df_1, df_2, df_3, df_4, df_5, df_6)
 str(euro5_players)
+#2345 players with 86 variables
 ```
 
 ```{r}
@@ -134,31 +142,38 @@ euro5_players[euro5_players$Player == "E. Dieye", ]
 
 # Creating groups of clubs by league for the 2021/22 season
 
+#clubs in Spain
 LaLiga_Clubs = c("Athletic Bilbao", "Atlético Madrid", "Barcelona", "Cádiz", 
                  "Celta de Vigo", "Deportivo Alavés", "Elche", "Espanyol", "Getafe", 
                  "Granada", "Levante", "Mallorca", "Osasuna", "Rayo Vallecano",
                  "Real Betis", "Real Madrid", "Real Sociedad", "Sevilla", "Valencia", "Villarreal")
 
+#clubs in England
 Prem_Clubs = c("Arsenal", "Aston Villa", "Brentford", "Brighton", "Burnley", 
                "Chelsea", "Crystal Palace", "Everton", "Leeds United", "Leicester City", 
                "Liverpool", "Manchester City", "Manchester United", "Newcastle United", "Norwich City", 
                "Southampton", "Tottenham Hotspur", "Watford", "West Ham United", "Wolverhampton Wanderers")
 
+#clubs in Italy
 SerieA_Clubs = c("Atalanta", "Bologna", "Cagliari", "Empoli", "Fiorentina", 
                  "Genoa", "Hellas Verona", "Internazionale", "Juventus", "Lazio", 
                  "Milan", "Napoli", "Roma", "Salernitana", "Sampdoria", 
                  "Sassuolo", "Spezia", "Torino", "Udinese", "Venezia")
 
+#clubs in France
 Ligue1_Clubs = c("Angers SCO", "Bordeaux", "Brest", "Clermont", "Lens", 
                  "Lille", "Lorient", "Metz", "Monaco", "Montpellier", 
                  "Nantes", "Nice", "Olympique Lyonnais", "Olympique Marseille", "PSG", 
                  "Reims", "Rennes", "Saint-Étienne", "Strasbourg", "Troyes")
 
+#clubs in Germany
 Bundesliga_Clubs = c("Arminia Bielefeld", "Augsburg", "Bayer Leverkusen", "Bayern München", "Bochum", 
-                     "Borussia Dortmund", "Borussia M'gladbach", "Eintracht Frankfurt", "Freiburg", "Greuther Fürth", 
+                     "Borussia Dortmund", "Borussia M'gladbach", "Eintracht Frankfurt", 
+                     "Freiburg", "Greuther Fürth", 
                      "Hertha BSC", "Hoffenheim", "Köln", "Mainz 05", "RB Leipzig", 
                      "Stuttgart", "Union Berlin", "Wolfsburg")
 
+#putting all into Euro_Clubs
 Euro_Clubs = c(LaLiga_Clubs, Prem_Clubs, SerieA_Clubs, Ligue1_Clubs, Bundesliga_Clubs)
 ```
 
@@ -178,6 +193,7 @@ euro5_players
 ```
 
 ```{r}
+#creating case_when to give players leagues based on their clubs
 Leagues = case_when(euro5_players$Team %in% LaLiga_Clubs ~ "La Liga",
                     euro5_players$Team %in% Prem_Clubs ~ "Premier League",
                     euro5_players$Team %in% SerieA_Clubs ~ "Serie A",
@@ -196,11 +212,13 @@ head(euro5_players)
 # adding Main Position column by putting each player in their most common position
 
 ```{r}
+#adding most played position as main position
 euro5_players = euro5_players %>% 
   mutate(Main_Position = gsub(",.*$", "", euro5_players$Position))
 ```
 
 ```{r}
+#relocating main position
 euro5_players = euro5_players %>% 
   relocate(Main_Position, .before = Age)
 head(euro5_players)
@@ -209,16 +227,20 @@ head(euro5_players)
 # Position Peaks by Age - Creating positional brackets for peaks
 
 https://www.youtube.com/watch?v=ZFUX1qXj6J8
+https://theathletic.com/2935360/2021/11/15/what-age-do-players-in-different-positions-peak/
+
 
 Using peak age values recorded by The Athletic for each position.
 
 
 ```{r}
+#seeing unique values of positions
 unique(euro5_players$Main_Position)
 ```
 
 
 ```{r}
+#Creating position brackets to group players 
 Center_Forwards = c("CF")
 
 Cen_Attk_Mids = c("AMF")
@@ -266,12 +288,14 @@ Position_Peaks = case_when(
 ```
 
 ```{r}
+# adding position peaks by age
 euro5_players = euro5_players %>% 
   mutate(Position_Peaks = Position_Peaks) %>% 
   relocate(Position_Peaks, .before = Market.value)
 head(euro5_players)
 ```
 
+# Creating position brackets to group players together
 ```{r}
 Position_Brackets = case_when(
   euro5_players$Main_Position %in% Center_Forwards ~ "Center Forward",
@@ -289,6 +313,7 @@ Position_Brackets = case_when(
 ```
 
 ```{r}
+# adding position brackets to dataframe and relocating foot
 euro5_players = 
   euro5_players %>% 
   mutate(Position_Brackets = Position_Brackets) %>% 
@@ -298,11 +323,96 @@ euro5_players =
 head(euro5_players)
 ```
 
+#EDA on Market Value
+
+```{r}
+euro5_players %>% 
+  filter(Minutes.played >= 540) %>%
+  ggplot(., aes(x = Leagues, y = log(Market.value), fill = Leagues)) + 
+  geom_boxplot() + 
+  labs(title = "Log of Market Value vs League", 
+       caption = "Players in Top 5 Euro Leagues With\n 540 Minutes Played or More", 
+       x = "League", y = "Log of Market Value") + 
+  stat_summary(geom = "text", fun.y = quantile, 
+               aes(label = sprintf("%1.1f", ..y..),
+                   hjust = 3.75, 
+                   color = Leagues)) + 
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  )
+ggsave("LogMV_League_BP.png", height = 8, width = 12, dpi = "retina")
+```
+
+```{r}
+euro5_players %>% 
+  filter(Minutes.played >= 540) %>%
+  ggplot(., aes(x = Position_Peaks, y = Market.value, fill = Leagues))  +
+  geom_bar(stat = "summary", fun.y = "mean", position = 'dodge' ,width = 0.5) + 
+  labs(title = "Market Value vs Positional Peak Brackets", 
+       caption = "Players in Top 5 Euro Leagues With\n 540 Minutes Played or More", 
+       x = "Positional Peak Brackets", y = "Average Market Value") + 
+  scale_y_continuous(labels = scales::comma) + 
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  )
+
+ggsave("MV_PosPeak_Bar.png", height = 8, width = 12, dpi = "retina")
+```
+
+```{r}
+euro5_players %>% 
+  filter(Minutes.played >= 540) %>%
+  group_by(Leagues, Position_Peaks) %>%
+  summarise(Avg_MV = mean(Market.value))
+```
+
+
+```{r}
+euro5_players %>% 
+  filter(Minutes.played >= 540) %>%
+  group_by(Leagues) %>%
+  summarise(Avg_MV = mean(Market.value))
+```
+
+
+
+
+```{r}
+euro5_players %>% 
+  filter(Minutes.played >= 540) %>%
+  ggplot(., aes(x = Position_Brackets, y = Market.value, fill = Position_Brackets))  +
+  geom_bar(stat = "summary", fun.y = "mean", position = 'dodge') + 
+  labs(title = "Market Value vs Position Brackets", 
+       caption = "Players in Top 5 Euro Leagues With\n 540 Minutes Played or More", 
+       x = "Position Brackets", y = "Market Value") + 
+  scale_y_continuous(labels = scales::comma) + 
+  stat_summary(geom = "text", fun.y = mean, 
+               aes(label = sprintf("%1.1f", ..y..), 
+                   vjust = -0.3)) + 
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  )
+
+ggsave("MV_PosBracket_Bar.png", height = 8, width = 12, dpi = "retina")
+```
+
+```{r}
+euro5_players %>% 
+  filter(Minutes.played >= 540) %>%
+  group_by(Position_Brackets) %>%
+  summarise(Avg_MV = mean(Market.value))
+```
+
+
 
 # Finding Percentiles
 
 
 ```{r}
+#convert metrics into percentiles
 euro5_percentile = 
   euro5_players %>% 
   group_by(Position_Brackets) %>% 
@@ -313,14 +423,9 @@ euro5_percentile =
 head(euro5_percentile)
 ```
 
-```{r}
-euro5_percentile %>% filter(., Position_Brackets == "CAM")
-```
 
 
-
-
-# Creating variables to be multiplied
+# Creating weights based on the correlation to points
 
 ```{r}
 points_corr
@@ -423,10 +528,12 @@ PPDA.Against_corr =	0.68152616
 ```
 
 # Assigning correlations to percentiles to generate a weighted value
-# Fomula - Percentile * ((Correlation +/- 1) * 2)
+# Fomula - Percentile * ((Correlation +/- 1) * 2) or Percentile * ((abs(Correlation) + 1) * 2)
+# If there is not a direct like for like feature, but the feature is similar/creates same result as another, we will opt for that correlation. An example below
 # Since there is no total assist metric, we will use the correlation for goals because a goal leads to the same outcome as an assist.
 
 ```{r}
+# use transmute to create new df with metrics we want to see
 euro5_player_weights = 
   euro5_percentile %>% 
                             transmute(
@@ -634,6 +741,7 @@ euro5_player_weights =
 
 
 ```{r}
+#looking at dataframe with the weights of each feature
 euro5_player_weights
 ```
 
@@ -659,6 +767,7 @@ allTables = full_table %>% html_table(fill = TRUE)
 table_1 = allTables[[11]]
 table_1
 ```
+# Clean scraped table
 
 ```{r}
 #make column names unique so we can clean everything
@@ -688,6 +797,7 @@ colnames(table_1) = c("Ranking", "Country", "Total Coefficient")
 
 
 ```{r}
+#cleaning the country info to just display the country
 table_1 = table_1 %>% 
   mutate(Country = gsub(" \\(.*", "", Country))
 ```
@@ -696,7 +806,7 @@ table_1 = table_1 %>%
 table_1
 ```
 
-# Assigning values to each country
+# Assigning values to each league
 
 ```{r}
 eng_coef = 99.783
@@ -707,9 +817,10 @@ france_coef = 56.081
 ```
 
 
-# Adding League Coef Wt and Player Peak Age Wt
+# Adding League Coef Weight and Player Peak Age Weightt
 
 ```{r}
+#0.25 used to maintain a sizable gap between the leagues without completely omitting players from leagues like Ligue 1 compared to the Premier League
 League_Coef_Wt = 
   case_when(euro5_player_weights$Leagues == "Premier League" ~ eng_coef * 0.25, 
             euro5_player_weights$Leagues == "La Liga" ~ spain_coef * 0.25,
@@ -719,9 +830,12 @@ League_Coef_Wt =
 ```
 
 ```{r}
+# Developing - Player expected to continue to progress. Clubs bring in developing players with the expectation their market value will continue to rise. For this reason, they have the strongest weight. It would be more logical if a 21 year old had the same metrics than a 28 year old, therefor being a more prudent investment long term.
+# Peak - the finished product. A player typically at the height of their career.
+# Veteran - A player who is most likely in regression. YOu buy a player like this as a short term fix or to bolster depth/provide experence. You pay exactly what you get and do not expect future resale value.
 Position_Peak_Wt = 
-  case_when(euro5_player_weights$Position_Peaks == "Developing" ~ 2.0,
-            euro5_player_weights$Position_Peaks == "Peak" ~ 1.75,
+  case_when(euro5_player_weights$Position_Peaks == "Developing" ~ 1.5,
+            euro5_player_weights$Position_Peaks == "Peak" ~ 1.25,
             euro5_player_weights$Position_Peaks == "Veteran" ~ 1.0)
 ```
 
@@ -737,29 +851,774 @@ euro5_player_weights = euro5_player_weights %>%
 head(euro5_player_weights)
 ```
 
-# Linear Regression
+# Splitting Overall dataframe by position brackets prior to linear regression and selecting KPIs for each position
 
 ```{r}
-test_1 = euro5_player_weights %>% 
-  select(1:15, 20:26, 45, 47, 49, 51, 53, 54, 63:68) %>% 
-  filter(Position_Brackets == "Center Back")
+unique(euro5_player_weights$Position_Brackets)
+```
+
+```{r}
+#Center Forward DF
+CF_df = euro5_player_weights %>% filter(Position_Brackets == "Center Forward")
+#Central Attacking Midfielder DF
+CAM_df = euro5_player_weights %>% filter(Position_Brackets == "CAM")
+#Center Midfielder DF
+CM_df = euro5_player_weights %>% filter(Position_Brackets == "Center Mid")
+#Center Back DF
+CB_df = euro5_player_weights %>% filter(Position_Brackets == "Center Back")
+#Outside Back DF
+OB_df = euro5_player_weights %>% filter(Position_Brackets == "Outside Back")
+#Wide Attacker DF
+WA_df = euro5_player_weights %>% filter(Position_Brackets == "Wide Attacker")
+```
+
+```{r}
+# view col names so we can select what's relevant to positions
+colnames(euro5_player_weights)
+```
+
+```{r}
+# CF Data Frame - Pulls relevant information for the position
+CF_df = CF_df %>% 
+  select(1:19, 23, 27:35, 40:45, 55, 67:68) %>% 
+  add_column(., "Weighted_Score" = (rowSums(CF_df[, 16:36], na.rm = TRUE) + 
+                                      CF_df$League_Coef_Wt) * CF_df$Position_Peak_Wt)
 ```
 
 
 ```{r}
-#test_1 %>% mutate(Weighted_Score = apply(., FUN = sum, MARGIN = 1, na.rm = TRUE))
+# CAM Data Frame - Pulls relevant information for the position
+CAM_df = CAM_df %>% 
+  select(1:19, 27:35, 39:47, 55:62, 65:68) %>% 
+  add_column(., "Weighted_Score" = (rowSums(CAM_df[, 16:47], na.rm = TRUE) + 
+                                      CAM_df$League_Coef_Wt) * CAM_df$Position_Peak_Wt)
+```
+
+
+```{r}
+# CM Data Frame - Pulls relevant information for the position
+CM_df = CM_df %>% 
+  select(1:19, 20:23, 26:35, 39:68) %>% 
+  add_column(., "Weighted_Score" = (rowSums(CM_df[, 16:61], na.rm = TRUE) + 
+                                      CM_df$League_Coef_Wt) * CM_df$Position_Peak_Wt)
+```
+
+
+```{r}
+# CB Data Frame - Pulls relevant information for the position
+CB_df = CB_df %>% 
+  select(1:15, 20:26, 45, 47, 49, 51, 63:64, 67:68) %>% 
+  add_column(., "Weighted_Score" = (rowSums(CB_df[, 16:28], na.rm = TRUE) + 
+                                      CB_df$League_Coef_Wt) * CB_df$Position_Peak_Wt)
+```
+
+
+```{r}
+# OB Data Frame - Pulls relevant information for the position
+OB_df = OB_df %>% 
+  select(1:15, 18:26, 35:40, 42:51, 55:58, 65:68) %>% 
+  add_column(., "Weighted_Score" = (rowSums(OB_df[, 16:46], na.rm = TRUE) + 
+                                      OB_df$League_Coef_Wt) * OB_df$Position_Peak_Wt)
+```
+
+
+```{r}
+# WA Data Frame - Pulls relevant information for the position
+WA_df = WA_df %>% 
+  select(1:19, 27:47, 50:51, 55:62, 65:68) %>% 
+  add_column(., "Weighted_Score" = (rowSums(WA_df[, 16:52], na.rm = TRUE) + 
+                                      WA_df$League_Coef_Wt) * WA_df$Position_Peak_Wt)
+
+```
+
+
+```{r}
+# filtering to remove all players without a market value
+
+CF_df = CF_df %>% filter(Market.value >= 0)
+
+CAM_df = CAM_df %>% filter(Market.value >= 0)
+
+CM_df = CM_df %>% filter(Market.value >= 0)
+
+CB_df = CB_df %>% filter(Market.value >= 0)
+
+OB_df = OB_df %>% filter(Market.value >= 0)
+
+WA_df = WA_df %>% filter(Market.value >= 0)
+```
+
+
+# Plotting a Loess line of best fit to evaluate market value and weighted score for each position bracket 
+```{r}
+# use the loess function so we can calculate regression values between the line of best fit and player point
+
+#loess for cf
+modCF = loess(Market.value ~ Weighted_Score, data = CF_df)
+
+#loess for cam
+modCAM = loess(Market.value ~ Weighted_Score, data = CAM_df)
+
+#loess for cm
+modCM = loess(Market.value ~ Weighted_Score, data = CM_df)
+
+#loess for cb
+modCB = loess(Market.value ~ Weighted_Score, data = CB_df)
+
+#loess for ob
+modOB = loess(Market.value ~ Weighted_Score, data = OB_df)
+
+#loess for wa
+modWA = loess(Market.value ~ Weighted_Score, data = WA_df)
+```
+
+```{r}
+#plotting the line of best fit that would be found through loess
+
+ggplot(CF_df, aes(x = Weighted_Score, y = Market.value, label = Player)) + geom_point() + 
+  geom_smooth(method = 'loess') + 
+  labs(title = "Market Value vs Weighted Score for Central Forwards",
+       x = "Weighted Score", y = "Market Value") + 
+  scale_y_continuous(labels = scales::comma) + 
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  )
+
+ggplot(CAM_df, aes(x = Weighted_Score, y = Market.value, label = Player)) + geom_point() + 
+  geom_smooth(method = 'loess')+ 
+  labs(title = "Market Value vs Weighted Score for Central Attacking Mids",
+       x = "Weighted Score", y = "Market Value")+ 
+  scale_y_continuous(labels = scales::comma) + 
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  )
+
+ggplot(CM_df, aes(x = Weighted_Score, y = Market.value, label = Player)) + geom_point() + 
+  geom_smooth(method = 'loess')+ 
+  labs(title = "Market Value vs Weighted Score for Central Midfielders",
+       x = "Weighted Score", y = "Market Value")+ 
+  scale_y_continuous(labels = scales::comma) + 
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  )
+
+ggplot(CB_df, aes(x = Weighted_Score, y = Market.value, label = Player)) + geom_point() + 
+  geom_smooth(method = 'loess')+ 
+  labs(title = "Market Value vs Weighted Score for Center Backs",
+       x = "Weighted Score", y = "Market Value")+ 
+  scale_y_continuous(labels = scales::comma) + 
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  )
+
+ggplot(OB_df, aes(x = Weighted_Score, y = Market.value, label = Player)) + geom_point() + 
+  geom_smooth(method = 'loess')+ 
+  labs(title = "Market Value vs Weighted Score for Outside Backs",
+       x = "Weighted Score", y = "Market Value")+ 
+  scale_y_continuous(labels = scales::comma) + 
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  )
+
+ggplot(WA_df, aes(x = Weighted_Score, y = Market.value, label = Player)) + geom_point() + 
+  geom_smooth(method = 'loess')+ 
+  labs(title = "Market Value vs Weighted Score for Wide Attackers",
+       x = "Weighted Score", y = "Market Value")+ 
+  scale_y_continuous(labels = scales::comma) + 
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  )
+```
+
+```{r}
+# showing how linear regression model fails to adjust to the extremes cases compared to loess
+
+ggplot(WA_df, aes(x = Weighted_Score, y = Market.value, label = Player)) + geom_point() + 
+  geom_smooth(method = 'lm')+ 
+  labs(title = "Market Value vs Weighted Score for Wide Attackers",
+       x = "Weighted Score", y = "Market Value")+ 
+  scale_y_continuous(labels = scales::comma) + 
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  )
+
+```
+
+
+# Finding residuals for each player compared to the line  of best fit
+```{r}
+CF_df$Residuals = modCF$residuals
+
+CAM_df$Residuals = modCAM$residuals
+
+CM_df$Residuals = modCM$residuals
+
+CB_df$Residuals = modCB$residuals
+
+OB_df$Residuals = modOB$residuals
+
+WA_df$Residuals = modWA$residuals
+
 ```
 
 
 
 
+```{r}
+# Identifying if a player is overvalued, undervalued, or within reason based on residual to market value
+# Completed for each player bracket
+CF_df = CF_df %>% 
+  mutate(
+  Valuation = case_when(Residuals >= 0*Market.value & Residuals <= 0.20*Market.value ~ "Within Reason", 
+          Residuals > 0.20*Market.value & Residuals <= 0.30*Market.value ~ "Slightly Overvalued", 
+          Residuals > 0.30*Market.value ~ "Significantly Overvalued", 
+          Residuals < 0*Market.value & Residuals >= -0.20*Market.value ~ "Within Reason",
+          Residuals < -0.20*Market.value & Residuals >= -0.30*Market.value ~ "Slightly Undervalued", 
+          Residuals < -0.30*Market.value ~ "Significantly Undervalued"))
+  
+CAM_df = CAM_df %>% 
+  mutate(
+  Valuation = case_when(Residuals >= 0*Market.value & Residuals <= 0.20*Market.value ~ "Within Reason", 
+          Residuals > 0.20*Market.value & Residuals <= 0.30*Market.value ~ "Slightly Overvalued", 
+          Residuals > 0.30*Market.value ~ "Significantly Overvalued", 
+          Residuals < 0*Market.value & Residuals >= -0.20*Market.value ~ "Within Reason",
+          Residuals < -0.20*Market.value & Residuals >= -0.30*Market.value ~ "Slightly Undervalued", 
+          Residuals < -0.30*Market.value ~ "Significantly Undervalued"))
+
+CM_df = CM_df %>% 
+  mutate(
+  Valuation = case_when(Residuals >= 0*Market.value & Residuals <= 0.20*Market.value ~ "Within Reason", 
+          Residuals > 0.20*Market.value & Residuals <= 0.30*Market.value ~ "Slightly Overvalued", 
+          Residuals > 0.30*Market.value ~ "Significantly Overvalued", 
+          Residuals < 0*Market.value & Residuals >= -0.20*Market.value ~ "Within Reason",
+          Residuals < -0.20*Market.value & Residuals >= -0.30*Market.value ~ "Slightly Undervalued", 
+          Residuals < -0.30*Market.value ~ "Significantly Undervalued"))
+
+CB_df = CB_df %>% 
+  mutate(
+  Valuation = case_when(Residuals >= 0*Market.value & Residuals <= 0.20*Market.value ~ "Within Reason", 
+          Residuals > 0.20*Market.value & Residuals <= 0.30*Market.value ~ "Slightly Overvalued", 
+          Residuals > 0.30*Market.value ~ "Significantly Overvalued", 
+          Residuals < 0*Market.value & Residuals >= -0.20*Market.value ~ "Within Reason",
+          Residuals < -0.20*Market.value & Residuals >= -0.30*Market.value ~ "Slightly Undervalued", 
+          Residuals < -0.30*Market.value ~ "Significantly Undervalued"))
+
+OB_df = OB_df %>% 
+  mutate(
+  Valuation = case_when(Residuals >= 0*Market.value & Residuals <= 0.20*Market.value ~ "Within Reason", 
+          Residuals > 0.20*Market.value & Residuals <= 0.30*Market.value ~ "Slightly Overvalued", 
+          Residuals > 0.30*Market.value ~ "Significantly Overvalued", 
+          Residuals < 0*Market.value & Residuals >= -0.20*Market.value ~ "Within Reason",
+          Residuals < -0.20*Market.value & Residuals >= -0.30*Market.value ~ "Slightly Undervalued", 
+          Residuals < -0.30*Market.value ~ "Significantly Undervalued"))
+
+WA_df = WA_df %>% 
+  mutate(
+  Valuation = case_when(Residuals >= 0*Market.value & Residuals <= 0.20*Market.value ~ "Within Reason", 
+          Residuals > 0.20*Market.value & Residuals <= 0.30*Market.value ~ "Slightly Overvalued", 
+          Residuals > 0.30*Market.value ~ "Significantly Overvalued", 
+          Residuals < 0*Market.value & Residuals >= -0.20*Market.value ~ "Within Reason",
+          Residuals < -0.20*Market.value & Residuals >= -0.30*Market.value ~ "Slightly Undervalued", 
+          Residuals < -0.30*Market.value ~ "Significantly Undervalued"))
+
+```
+
+
+
+# Data Viz Comparison - Deployment Example
+#Look for a striker with a weighted score around the 3rd quartile
+
+
+```{r}
+summary(CF_df$Weighted_Score)
+```
+
+```{r}
+#filter to find strikers between a score of 70 and 80 with a minimum of 630 minutes played
+shortlist_cf = CF_df %>% 
+  filter(Weighted_Score >= 70 & Weighted_Score <= 80 & Minutes.played >=630)
+```
+
+
+```{r}
+#filter shortlist to identify players.
+shortlist_cf = shortlist_cf %>% 
+  filter(Player == "O. Watkins" | Player == "I. Bebou" | Player == "L. Ajorque")
+```
+
+
+```{r}
+# we now have a shortlist of 3 players with scores between 75 and 79. 
+# all players have different valuations according to our valuation brackets
+shortlist_cf
+```
+
+
+```{r}
+shortlist_cf = 
+  shortlist_cf %>% 
+  ungroup() %>% 
+  select(Player, Market.value, Weighted_Score)
+```
+
+```{r}
+shortlist_cf
+```
+
+
+
+# plot market value and total player weighted score
+```{r}
+shortlist_cf %>% 
+  ggplot(., aes(x = Player, y = Market.value, fill = Player))  +
+  geom_bar(stat = "identity", position = 'dodge') + 
+  labs(title = "Market Value vs Player", 
+       x = "Player", y = "Market Value") + 
+  geom_text(aes(label = Market.value, vjust = -0.3)) + 
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  )
+
+ggsave("MV_SL.png", height = 8, width = 12, dpi = "retina")
+```
+
+
+```{r}
+shortlist_cf %>% 
+  ggplot(., aes(x = Player, y = Weighted_Score, fill = Player))  +
+  geom_bar(stat = "identity", position = 'dodge') + 
+  labs(title = "Weighted Score vs Player", 
+       x = "Player", y = "Weighted Score") + 
+  geom_text(aes(label = round(Weighted_Score, 2), vjust = -0.3)) + 
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  )
+
+ggsave("Score_SL.png", height = 8, width = 12, dpi = "retina")
+```
+
+#pulling player data
+
+```{r}
+shortlist_stats = 
+  euro5_players %>% 
+  filter(Player == "O. Watkins" | Player == "I. Bebou" | Player == "L. Ajorque")
+```
+
+#scatter plot for player data
+
+```{r}
+shortlist_stats
+```
+
+```{r}
+ggplot(data = shortlist_stats, aes(x = Shots.per.90, y = Shots.on.target..., label = Player)) +
+  geom_point(aes(fill = Player), shape = 21, alpha = 0.8, size = 6) +
+  geom_text_repel(size = 2.5, color = "white", min.segment.length = unit(0.1, "lines"), max.overlaps = 7) + 
+  theme(
+    legend.position = "right",
+    legend.key.size = unit(.4, "cm"), 
+    plot.background = element_rect(fill = "gray15", colour = "gray15"), 
+    panel.background = element_rect(fill = "gray15", colour = "gray15"), 
+    panel.grid.major = element_line(colour = "gray28"), 
+    panel.grid.minor = element_blank(), 
+    axis.line = element_line(colour = "lightgrey"), 
+    axis.text = element_text(color = "lightgrey"), 
+    axis.title = element_text(colour = "lightgrey"), 
+    plot.title = element_text(colour = "white", hjust = 0.5, face = "bold", size = 15),
+    plot.caption = element_text(colour = "white", face = "bold"), 
+    plot.subtitle = element_text(colour = "white", hjust = 0.5, face = "bold", size = 8)) + 
+  labs(title = "Shot % on Target vs Shots per 90", 
+       subtitle = "Shortlist", 
+       x = "Shots per 90", 
+       y = "Shot % on Target")
+  
+ggsave("ShortListShooting.png", height = 8, width = 8, dpi = "retina")
+
+#Ajorque has slight less shots per 90 than Bebou or Watkins, but hits the target significantly more than the others.
+```
+
+```{r}
+ggplot(data = shortlist_stats, aes(x = xG, y = Goals, label = Player)) +
+  geom_point(aes(fill = Player), shape = 21, alpha = 0.8, size = 6) +
+  geom_text_repel(size = 2.5, color = "white", min.segment.length = unit(0.1, "lines"), max.overlaps = 7) + 
+  theme(
+    legend.position = "right",
+    legend.key.size = unit(.4, "cm"), 
+    plot.background = element_rect(fill = "gray15", colour = "gray15"), 
+    panel.background = element_rect(fill = "gray15", colour = "gray15"), 
+    panel.grid.major = element_line(colour = "gray28"), 
+    panel.grid.minor = element_blank(), 
+    axis.line = element_line(colour = "lightgrey"), 
+    axis.text = element_text(color = "lightgrey"), 
+    axis.title = element_text(colour = "lightgrey"), 
+    plot.title = element_text(colour = "white", hjust = 0.5, face = "bold", size = 15),
+    plot.caption = element_text(colour = "white", face = "bold"), 
+    plot.subtitle = element_text(colour = "white", hjust = 0.5, face = "bold", size = 8)) + 
+  labs(title = "Goals vs xG", 
+       subtitle = "Shortlist", 
+       x = "xG", 
+       y = "Goals")
+  
+ggsave("ShortListGoals.png", height = 8, width = 8, dpi = "retina")
+
+#All players have similar xG metrics. Ajorque is drastically overperforming his xG, Bebou is slightly overperforming, and Ollie Watskins is right on par with his xG.
+```
+
+```{r}
+ggplot(data = shortlist_stats, aes(x = Touches.in.box.per.90, y = Goal.conversion..., label = Player)) +
+  geom_point(aes(fill = Player), shape = 21, alpha = 0.8, size = 6) +
+  geom_text_repel(size = 2.5, color = "white", min.segment.length = unit(0.1, "lines"), max.overlaps = 7) + 
+  theme(
+    legend.position = "right",
+    legend.key.size = unit(.4, "cm"), 
+    plot.background = element_rect(fill = "gray15", colour = "gray15"), 
+    panel.background = element_rect(fill = "gray15", colour = "gray15"), 
+    panel.grid.major = element_line(colour = "gray28"), 
+    panel.grid.minor = element_blank(), 
+    axis.line = element_line(colour = "lightgrey"), 
+    axis.text = element_text(color = "lightgrey"), 
+    axis.title = element_text(colour = "lightgrey"), 
+    plot.title = element_text(colour = "white", hjust = 0.5, face = "bold", size = 15),
+    plot.caption = element_text(colour = "white", face = "bold"), 
+    plot.subtitle = element_text(colour = "white", hjust = 0.5, face = "bold", size = 8)) + 
+  labs(title = "Goal Conversion Rate vs Touches in Penalty Area per 90", 
+       subtitle = "Shortlist", 
+       x = "Touches in Penalty Area per 90", 
+       y = "Goal Conversion Rate")
+  
+ggsave("PenArea.png", height = 8, width = 8, dpi = "retina")
+
+#Watkins generates the most touches in the penalty area per 90, which could indicate that he's getting in dangerous spaces more often. However, the plot here shows that Ajorque has the highest goal conversion rate, followed by Bebou. This could indicate that they are more efficient, as they are converting goals more often despite having less touches in the penalty area. 
+```
+
+As the club looking to identify a striker. We can see that Ollie Watkins has the highest market value. However, the scattergrams can be used to justify his valuation being significantly overvalued. When we look at Ajorque as an example, he contribued slightly less shots per 90, but is significantly more accurate with his shooting. This could contribute to the goal tally, which sees Ajorque having double the amount of goals as Watkins. In addition to this, while Watkins has a little more than 0.2 touches in the penalty area per 90 than Ajorque, Ajoque has a much higher goal conversion rate which could indicate that he is far more lethal in dangerous areas. This efficiency would come at a cost around $15,000,000, which is more than half of the value of Watkins. For this reason, we believe Ajorque is within a reasonable value relative to his season performances. Purchasing him would allow the club to invest in other areas, further bolstering the overall squad rather than sinking a large portion of their transfer budget on one player.
+
+# Random Samples - To avoid any bias, lets take random samples of each position bracket
+
+
+```{r}
+# set filters around 50th percentile
+summary(CAM_df$Weighted_Score)
+summary(CM_df$Weighted_Score)
+summary(CB_df$Weighted_Score)
+summary(OB_df$Weighted_Score)
+summary(WA_df$Weighted_Score)
+```
+
+```{r}
+#filter to find around 50th percentile, with minimum of 720 minutes played
+shortlist_CAM = CAM_df %>% 
+  filter(Weighted_Score >= 65 & Weighted_Score <= 73 & Minutes.played >=720)
+
+shortlist_CM = CM_df %>% 
+  filter(Weighted_Score >= 100 & Weighted_Score <= 106 & Minutes.played >=720)
+
+shortlist_CB = CB_df %>% 
+  filter(Weighted_Score >= 42 & Weighted_Score <= 47 & Minutes.played >=720)
+
+shortlist_OB = OB_df %>% 
+  filter(Weighted_Score >= 73 & Weighted_Score <= 78 & Minutes.played >=720)
+
+shortlist_WA = WA_df %>% 
+  filter(Weighted_Score >= 91 & Weighted_Score <= 97 & Minutes.played >=720)
+```
+
+```{r}
+#randomly pull 3 players from each data set
+set.seed(10)
+shortlist_CAM = shortlist_CAM[sample(nrow(shortlist_CAM), 3), ]
+shortlist_CM = shortlist_CM[sample(nrow(shortlist_CM), 3), ]
+shortlist_CB = shortlist_CB[sample(nrow(shortlist_CB), 3), ]
+shortlist_OB = shortlist_OB[sample(nrow(shortlist_OB), 3), ]
+shortlist_WA = shortlist_WA[sample(nrow(shortlist_WA), 3), ]
+
+
+```
+
+
+
+```{r}
+#view samples
+shortlist_CAM
+shortlist_CM
+shortlist_CB
+shortlist_OB
+shortlist_WA
+```
+
+
+
+#make bar graphs for market value and weighted score 
+
+```{r}
+#ungroup and filter so we can marge the dataframes together
+shortlist_CAM = shortlist_CAM %>% 
+  ungroup() %>% 
+  select(Player, Position_Brackets, Market.value, 
+  Weighted_Score, Valuation)
+
+shortlist_CM = shortlist_CM %>% 
+  ungroup() %>% 
+  select(Player, Position_Brackets, Market.value, 
+  Weighted_Score, Valuation)
+
+shortlist_CB = shortlist_CB %>% 
+  ungroup() %>% 
+  select(Player, Position_Brackets, Market.value, 
+  Weighted_Score, Valuation)
+
+shortlist_OB = shortlist_OB %>% 
+  ungroup() %>% 
+  select(Player, Position_Brackets, Market.value, 
+  Weighted_Score, Valuation)
+
+shortlist_WA = shortlist_WA %>% 
+  ungroup() %>% 
+  select(Player, Position_Brackets, Market.value, 
+  Weighted_Score, Valuation)
+```
+
+
+```{r}
+#put data frames together
+rand_df = rbind(shortlist_CAM, shortlist_CM, shortlist_CB, shortlist_OB, shortlist_WA)
+```
+
+```{r}
+rand_df
+```
+
+#market value bar graph
+
+```{r}
+rand_df %>% 
+  ggplot(., aes(x = reorder(Player, Market.value) , y = Market.value, fill = Position_Brackets))  +
+  geom_bar(stat = "identity", position = 'dodge') + 
+  geom_text(aes(label = (paste(Valuation, Market.value))), size = 3, hjust = -0.08) + 
+  labs(title = "Market Value vs Player", 
+       x = "Player", y = "Market Value") + 
+  scale_y_continuous(labels = scales::comma, limits = c(0, 100000000)) +
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  ) +
+  coord_flip()  
+  
+
+ggsave("MV_SL_rand.png", height = 8, width = 12, dpi = "retina")
+
+#chart below shows that we have at least 1 variation in valuations per position bracket
+```
+
+#weighted score bar graph
+
+```{r}
+rand_df %>% 
+  ggplot(., aes(x = reorder(Player, Weighted_Score) , y = Weighted_Score, fill = Position_Brackets))  +
+  geom_bar(stat = "identity", position = 'dodge') + 
+  geom_text(aes(label = (paste(Valuation, round(Weighted_Score, 2)))), size = 3, hjust = -0.08) + 
+  labs(title = "Weighted Score vs Player", 
+       x = "Player", y = "Weighted Score") + 
+  scale_y_continuous(labels = scales::comma, limits = c(0, 135)) +
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  ) +
+  coord_flip()  
+  
+
+ggsave("WtScore_SL_rand.png", height = 8, width = 12, dpi = "retina")
+
+#chart below shows scores for each player in each position bracket
+```
+
+
+# get percentile values for the selected players in dataframes
+
+```{r}
+rand_df$Player
+```
+
+
+```{r}
+#pull 15 players that we selected
+rand_percentile = 
+  euro5_percentile %>% 
+  filter(Player == "O. Duda" | Player == "Denis Suárez" |  Player == "N. Mbuku" | 
+           Player ==  "Jae-Sung Lee" | Player == "B. Santamaria" | Player == "M. Loum" | 
+           Player == "K. Danso" | Player == "I. Diop" | Player == "Germán Sánchez" | 
+           Player == "Aihen Muñoz" | Player == "Emerson Palmieri" | Player == "W. Kechrida" | 
+           Player == "S. Mané" | Player == "M. Simon" | Player == "Iker Muniain")
+```
+
+#
+```{r}
+rand_percentile
+```
+# Create bar graphs showing percentiles in key metrics
+
+```{r}
+#CAM
+rand_percentile %>% filter(Position_Brackets == "CAM") %>%
+  select(Player, 
+         Goals.per.90, xG.per.90, Shots.per.90, Shots.on.target..., 
+         Assists.per.90, xA.per.90, 
+         Dribbles.per.90, Successful.dribbles..., 
+         Passes.per.90, Accurate.passes..., 
+         Progressive.passes.per.90, Accurate.progressive.passes...) %>%
+  pivot_longer(., 3:14, names_to = "Category", values_to = "Percentile") %>%
+  ggplot(., aes(x = Category , y = Percentile, fill = Player))  +
+  geom_bar(stat = "identity", position = 'dodge') + 
+  geom_text(aes(label = Percentile), 
+            size = 4, 
+            hjust = -0.5, 
+            position = position_dodge(width = 1.0)) + 
+  labs(title = "Percentile vs Category - CAM", 
+       x = "Player", y = "Percentile", 
+       caption = "Percentiles for CAM out of 84") + 
+  scale_y_continuous(limits = c(0, 84)) +
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  ) + 
+  coord_flip()
+ggsave("CAM_Cat_SL_rand.png", height = 8, width = 12, dpi = "retina")
+```
+
+
+
+```{r}
+#Center Mid
+rand_percentile %>% filter(Position_Brackets == "Center Mid") %>%
+  select(Player, 
+         Goals.per.90, xG.per.90, Shots.per.90, Shots.on.target..., 
+         Assists.per.90, xA.per.90, 
+         Dribbles.per.90, Successful.dribbles..., 
+         Passes.per.90, Accurate.passes..., 
+         Progressive.passes.per.90, Accurate.progressive.passes..., 
+         Defensive.duels.per.90, Defensive.duels.won...) %>%
+  pivot_longer(., 3:16, names_to = "Category", values_to = "Percentile") %>%
+  ggplot(., aes(x = Category , y = Percentile, fill = Player))  +
+  geom_bar(stat = "identity", position = 'dodge') + 
+  geom_text(aes(label = Percentile), 
+            size = 4, 
+            hjust = -0.5, 
+            position = position_dodge(width = 1.0)) + 
+  labs(title = "Percentile vs Category - Central Midfielder", 
+       x = "Player", y = "Percentile", 
+       caption = "Percentiles for CM out of 100") + 
+  scale_y_continuous(limits = c(0, 100)) +
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  ) + 
+  coord_flip()
+ggsave("CM_Cat_SL_rand.png", height = 8, width = 12, dpi = "retina")
+```
 
 
 
 
+```{r}
+#Center Back
+rand_percentile %>% filter(Position_Brackets == "Center Back") %>%
+  select(Player, 
+         Defensive.duels.per.90, Defensive.duels.won..., 
+         Aerial.duels.per.90, Aerial.duels.won..., 
+         PAdj.Interceptions, Fouls.per.90, Accurate.passes...) %>%
+  pivot_longer(., 3:9, names_to = "Category", values_to = "Percentile") %>%
+  ggplot(., aes(x = Category , y = Percentile, fill = Player))  +
+  geom_bar(stat = "identity", position = 'dodge') + 
+  geom_text(aes(label = Percentile), 
+            size = 4, 
+            hjust = -0.5, 
+            position = position_dodge(width = 1.0)) + 
+  labs(title = "Percentile vs Category - Centrer Back", 
+       x = "Player", y = "Percentile", 
+       caption = "Percentiles for CB out of 100") + 
+  scale_y_continuous(limits = c(0, 100)) +
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  ) + 
+  coord_flip()
+ggsave("CB_Cat_SL_rand.png", height = 8, width = 12, dpi = "retina")
+```
 
 
 
+
+```{r}
+#Outside Back
+rand_percentile %>% filter(Position_Brackets == "Outside Back") %>%
+  select(Player, 
+         Defensive.duels.per.90, Defensive.duels.won..., 
+         PAdj.Interceptions, Fouls.per.90, Accurate.passes..., 
+         Assists.per.90, xA.per.90, 
+         Crosses.per.90, Accurate.crosses..., Crosses.to.goalie.box.per.90, 
+         Progressive.passes.per.90, Accurate.progressive.passes...) %>%
+  pivot_longer(., 3:14, names_to = "Category", values_to = "Percentile") %>%
+  ggplot(., aes(x = Category , y = Percentile, fill = Player))  +
+  geom_bar(stat = "identity", position = 'dodge') + 
+  geom_text(aes(label = Percentile), 
+            size = 4, 
+            hjust = -0.5, 
+            position = position_dodge(width = 1.0)) + 
+  labs(title = "Percentile vs Category - Outside Back", 
+       x = "Player", y = "Percentile", 
+       caption = "Percentiles for OB out of 100") + 
+  scale_y_continuous(limits = c(0, 100)) +
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  ) + 
+  coord_flip()
+ggsave("OB_Cat_SL_rand.png", height = 8, width = 12, dpi = "retina")
+```
+
+
+```{r}
+colnames(WA_df)
+```
+
+```{r}
+#Wide Attacker
+rand_percentile %>% filter(Position_Brackets == "Wide Attacker") %>%
+  select(Player, 
+         Goals.per.90, xG.per.90, Shots.per.90, Shots.on.target..., 
+         Assists.per.90, xA.per.90, 
+         Dribbles.per.90, Successful.dribbles..., 
+         Passes.per.90, Accurate.passes..., 
+         Progressive.passes.per.90, Accurate.progressive.passes..., 
+         Crosses.per.90, Accurate.crosses..., Crosses.to.goalie.box.per.90) %>%
+  pivot_longer(., 3:17, names_to = "Category", values_to = "Percentile") %>%
+  ggplot(., aes(x = Category , y = Percentile, fill = Player))  +
+  geom_bar(stat = "identity", position = 'dodge') + 
+  geom_text(aes(label = Percentile), 
+            size = 4, 
+            hjust = -0.5, 
+            position = position_dodge(width = 1.0)) + 
+  labs(title = "Percentile vs Category - Wide Attacker", 
+       x = "Player", y = "Percentile", 
+       caption = "Percentiles for WA out of 100") + 
+  scale_y_continuous(limits = c(0, 100)) +
+  theme(
+    panel.background = element_rect(color = "black"), 
+    plot.background = element_rect(color = "black")
+  ) + 
+  coord_flip()
+ggsave("WA_Cat_SL_rand.png", height = 8, width = 12, dpi = "retina")
+```
 
 
 
